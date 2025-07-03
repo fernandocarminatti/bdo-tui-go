@@ -92,7 +92,7 @@ func initialModel() model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	vp := viewport.New(80, 20) 
+	vp := viewport.New(80, 20)
 
 	return model{
 		state:     stateSearch,
@@ -103,7 +103,6 @@ func initialModel() model {
 }
 
 // --- Bubbletea Messages ---
-// We use messages to communicate asynchronous results back to the Update loop.
 
 type profileURLMsg string
 type profileResultMsg FullProfile
@@ -221,7 +220,6 @@ func getDocument(url string) (*goquery.Document, error) {
 	return goquery.NewDocumentFromReader(res.Body)
 }
 
-
 // --- (Init, Update, View) ---
 
 func (m *model) Init() tea.Cmd {
@@ -279,13 +277,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	
 	case tea.WindowSizeMsg:
 		m.viewport.Width = msg.Width - 4
-		m.viewport.Height = msg.Height - 10
+		m.viewport.Height = msg.Height - 2
 		
-	//case spinner.Msg:
-	//	if m.state == stateLoading {
-	//		m.spinner, cmd = m.spinner.Update(msg)
-	//		return m, cmd
-	//	}
+	case spinner.TickMsg:
+		if m.state == stateLoading {
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
 	}
 	
 	if m.state == stateProfileView {
