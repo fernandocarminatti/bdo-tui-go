@@ -25,7 +25,7 @@ var (
 	keyStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	valueStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 	characterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
-	mainCharStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	mainCharStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
 )
 
 const baseURL = "https://www.sa.playblackdesert.com"
@@ -43,7 +43,8 @@ type FamilyInfo struct {
 
 type LifeSkill struct {
 	Name   string
-	Level  string
+	LevelName  string
+	LevelInt string
 	Mastery string
 }
 
@@ -51,7 +52,6 @@ type Character struct {
 	Name   string
 	Class  string
 	Level  string
-	IsMain bool
 }
 
 type FullProfile struct {
@@ -146,23 +146,44 @@ func fetchProfileData(profileURL string) tea.Cmd {
 		profile.FamilyInfo.Energy = strings.TrimSpace(infoBox.Find("ul.line_list > li:nth-child(4) > span.desc").Text())
 		profile.FamilyInfo.Contribution = strings.TrimSpace(infoBox.Find("ul.line_list > li:nth-child(5) > span.desc").Text())
 		
-		doc.Find("div.life_info_area li").Each(func(i int, s *goquery.Selection) {
-			name := s.Find("p.life_title").Text()
-			level := strings.TrimSpace(s.Find("span").First().Text())
-			profile.LifeSkills = append(profile.LifeSkills, LifeSkill{Name: name, Level: level})
+		lifeskillsData := doc.Find("ul.character_data_box")
+		lifeskillsData.Find("li").Each(func(i int, s *goquery.Selection) {
+			name := strings.TrimSpace(s.Find("span.spec_name").Text())
+			rawLevel := strings.TrimSpace(s.Find("span.spec_level").Text())
+			mastery := strings.TrimSpace(s.Find("span.spec_stat").Text())
+
+			normalizedLevel := strings.Replace(rawLevel, "Nv.", " Nv.", 1)
+			normalizedSplit := strings.SplitN(normalizedLevel, " ", 2)
+			levelName := normalizedSplit[0]
+			levelInt := normalizedSplit[1]
+
+			profile.LifeSkills = append(profile.LifeSkills, LifeSkill{
+				Name: name,
+				LevelName: levelName,
+				LevelInt: levelInt,
+				Mastery: mastery,
+			})
 		})
 
-		doc.Find("div.box_list_character li").Each(func(i int, s *goquery.Selection) {
-			isMain := s.Find("span.main_character").Length() > 0
-			name := s.Find("strong.character_name").Text()
-			class := s.Find("span.character_symbol em").Text()
-			level := s.Find("span.character_info em").Text()
+		characterData := doc.Find("ul.character_list")
+		characterData.Find("li").Each(func(i int, s *goquery.Selection) {
+			isMain := strings.Contains(s.Find("p.character_name span.selected_label").Text(), "Personagem Principal")
+			name := strings.TrimSpace(
+				s.Find("p.character_name").Contents().FilterFunction(func(i int, sel *goquery.Selection) bool {
+					return goquery.NodeName(sel) == "#text"
+				}).Text(),
+			)
+			class := strings.TrimSpace(s.Find("span.character_symbol em:nth-child(2)").Text())
+			level := strings.TrimSpace(s.Find("span.character_info span:nth-child(2)").Text())
 			
+			if isMain {
+				level += " Personagem Principal"
+			}
+
 			profile.Characters = append(profile.Characters, Character{
-				Name:   strings.TrimSpace(name),
+				Name:   name,
 				Class:  class,
 				Level:  level,
-				IsMain: isMain,
 			})
 		})
 		
@@ -308,25 +329,21 @@ func (m *model) formatProfile() string {
 
 	// Family
 	p := m.profile
-	b.WriteString(titleStyle.Render(p.FamilyInfo.Name) + "\n")
+	b.WriteString(keyStyle.Render("Family: ") + valueStyle.Render(p.FamilyInfo.Name) + "\n")
 	b.WriteString(keyStyle.Render("Guild: ") + valueStyle.Render(p.FamilyInfo.Guild) + "\n")
 	b.WriteString(keyStyle.Render("Created: ") + valueStyle.Render(p.FamilyInfo.CreationDate) + "\n")
 	b.WriteString(fmt.Sprintf("%s | %s | %s\n",
-		keyStyle.Render("PAPD: ")+valueStyle.Render(p.FamilyInfo.PAPD),
-		keyStyle.Render("Energy: ")+valueStyle.Render(p.FamilyInfo.Energy),
-		keyStyle.Render("CP: ")+valueStyle.Render(p.FamilyInfo.Contribution),
+		keyStyle.Render("PAPD: ") + valueStyle.Render(p.FamilyInfo.PAPD),
+		keyStyle.Render("Energy: ") + valueStyle.Render(p.FamilyInfo.Energy),
+		keyStyle.Render("CP: ") + valueStyle.Render(p.FamilyInfo.Contribution),
 	))
 	b.WriteString("\n" + titleStyle.Render("Characters") + "\n")
 	b.WriteString(strings.Repeat("-", 40) + "\n")
 	
 	// Characters
 	for _, char := range p.Characters {
-		line := fmt.Sprintf("• %-25s %-15s %s", char.Name, char.Class, char.Level)
-		if char.IsMain {
-			b.WriteString(mainCharStyle.Render(line + " (Main)") + "\n")
-		} else {
-			b.WriteString(characterStyle.Render(line) + "\n")
-		}
+		line := fmt.Sprintf("• %-18s %-12s %s", char.Name, char.Class, char.Level)
+		b.WriteString(characterStyle.Render(line) + "\n")
 	}
 	
 	b.WriteString("\n" + titleStyle.Render("Life Skills") + "\n")
@@ -334,7 +351,7 @@ func (m *model) formatProfile() string {
 
 	// Life Skills
 	for _, skill := range p.LifeSkills {
-		b.WriteString(fmt.Sprintf("• %-20s %s\n", keyStyle.Render(skill.Name), valueStyle.Render(skill.Level)))
+		b.WriteString(fmt.Sprintf("• %-34s %-28s %s\n", keyStyle.Render(skill.Name), valueStyle.Render(skill.LevelName), valueStyle.Render(skill.LevelInt))) 
 	}
 
 	return b.String()
