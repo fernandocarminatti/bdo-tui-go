@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-//	"net/url"
+	"net/url"
 	"strings"
 	"time"
-
+	"os"
+	"encoding/json"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -43,7 +44,7 @@ type FamilyInfo struct {
 type LifeSkill struct {
 	Name   string
 	Level  string
-	Points string
+	Mastery string
 }
 
 type Character struct {
@@ -118,13 +119,14 @@ func findProfileURL(familyName string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
+		selector := "div.box_list_area > ul > li > div.title > a"
 
-		profilePath, exists := doc.Find("div.box_list_area > ul > li > a.btn_adventurer").First().Attr("href")
+		profilePath, exists := doc.Find(selector).First().Attr("href")
 		if !exists {
-			return errMsg{fmt.Errorf("Only found %d results for '%s'. May not exist or profile is private", len(doc.Find("div.box_list_area > ul > li > a.btn_adventurer").Nodes), familyName)}
+			return errMsg{fmt.Errorf("Could not find profile link for '%s'. May not exist or profile is private", url.QueryEscape(familyName))}
 		}
 
-		return profileURLMsg(baseURL + profilePath)
+		return profileURLMsg(profilePath)
 	}
 }
 
@@ -136,26 +138,14 @@ func fetchProfileData(profileURL string) tea.Cmd {
 		}
 
 		var profile FullProfile
-		infoBox := doc.Find("div.box_profile_info")
-		profile.FamilyInfo.Name = strings.TrimSpace(infoBox.Find("p.nick_name").Text())
-		infoBox.Find("div.info_desc_box li").Each(func(i int, s *goquery.Selection) {
-			key := s.Find("strong").Text()
-			s.Find("strong").Remove()
-			value := strings.TrimSpace(s.Text())
-			
-			switch key {
-			case "Data de Criação da Família":
-				profile.FamilyInfo.CreationDate = value
-			case "Guilda":
-				profile.FamilyInfo.Guild = value
-			case "PAPD Máximo":
-				profile.FamilyInfo.PAPD = value
-			case "Energia":
-				profile.FamilyInfo.Energy = value
-			case "Pontos de Contribuição":
-				profile.FamilyInfo.Contribution = value
-			}
-		})
+		infoBox := doc.Find("div.profile_detail")
+		profile.FamilyInfo.Name = strings.TrimSpace(infoBox.Find("div.nick_wrap > p.nick").Text())
+		profile.FamilyInfo.CreationDate = strings.TrimSpace(infoBox.Find("ul.line_list > li:nth-child(1) > span.desc").Text())
+		profile.FamilyInfo.Guild = strings.TrimSpace(infoBox.Find("ul.line_list > li > span.guild > a").Text())
+		profile.FamilyInfo.PAPD = strings.TrimSpace(infoBox.Find("ul.line_list > li:nth-child(3) > span.desc").Text())
+		profile.FamilyInfo.Energy = strings.TrimSpace(infoBox.Find("ul.line_list > li:nth-child(4) > span.desc").Text())
+		profile.FamilyInfo.Contribution = strings.TrimSpace(infoBox.Find("ul.line_list > li:nth-child(5) > span.desc").Text())
+		
 		doc.Find("div.life_info_area li").Each(func(i int, s *goquery.Selection) {
 			name := s.Find("p.life_title").Text()
 			level := strings.TrimSpace(s.Find("span").First().Text())
@@ -176,6 +166,14 @@ func fetchProfileData(profileURL string) tea.Cmd {
 			})
 		})
 		
+		jsonData, err := json.MarshalIndent(profile, "", "  ")
+		if err != nil {
+			return errMsg{err}
+		}
+		err = os.WriteFile("debug_output.json", jsonData, 0644)
+		if err != nil {
+			return errMsg{err}
+		}
 		return profileResultMsg(profile)
 	}
 }
@@ -198,17 +196,18 @@ func getDocument(url string) (*goquery.Document, error) {
 		return nil, fmt.Errorf("server returned status: %s", res.Status)
 	}
 
+
 	return goquery.NewDocumentFromReader(res.Body)
 }
 
 
 // --- (Init, Update, View) ---
 
-func (m model) Init() tea.Cmd {
+func (m *model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -276,7 +275,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
+func (m *model) View() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("BDO Family Profile Viewer") + "\n\n")
@@ -304,7 +303,7 @@ func (m model) View() string {
 	return lipgloss.NewStyle().Margin(1, 2).Render(b.String())
 }
 
-func (m model) formatProfile() string {
+func (m *model) formatProfile() string {
 	var b strings.Builder
 
 	// Family
@@ -343,7 +342,8 @@ func (m model) formatProfile() string {
 
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	initialModel := initialModel()
+	p := tea.NewProgram(&initialModel, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Alas, there's been an error: %v", err)
 	}
