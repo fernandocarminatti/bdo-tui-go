@@ -12,14 +12,15 @@ import (
 
 type FamilyInfo struct {
 	PAPD string `json:"PAPD"`
+	Guild string `json:"Guild"`
 }
 
 type Profile struct {
 	FamilyInfo FamilyInfo `json:"FamilyInfo"`
 }
 
-func parseGearscore(papd string) (int, bool) {
-	papd = strings.TrimSpace(papd)
+func parseUserData(userData Profile) (int, bool) {
+	papd := strings.TrimSpace(userData.FamilyInfo.PAPD)
 	if papd == "Privado" || papd == "" {
 		return 0, false
 	}
@@ -31,15 +32,21 @@ func parseGearscore(papd string) (int, bool) {
 }
 
 func main() {
-	if len(os.Args) < 1 {
-		log.Fatalf("Usage: %s <folder>")
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <folder>", os.Args[0])
 	}
 	folder := os.Args[1]
 
 	var values []int
 	var usersWithPrivateData int
+	absFolder, err := filepath.Abs(folder)
+	guildName := filepath.Base(absFolder)
 
-	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+	if err != nil {
+		log.Fatal("Could not detemine guild name from absolute path")
+	}
+
+	err = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -57,7 +64,7 @@ func main() {
 			return err
 		}
 
-		gearscore, validValue := parseGearscore(profile.FamilyInfo.PAPD)
+		gearscore, validValue := parseUserData(profile)
 		if validValue {
 			values = append(values, gearscore)
 		} else {
@@ -88,8 +95,10 @@ func main() {
 		return
 	}
 
+	totalGuildMembers := count + usersWithPrivateData
 	average := sum / count
-	fmt.Printf("Read from %d users\n", count)
-	fmt.Printf("Average gearscore: %d\n", average)
+	fmt.Printf("Parsing for guild: %s\n", guildName)
+	fmt.Printf("Found %d members\n", totalGuildMembers)
 	fmt.Printf("Users with Private Data: %d\n", usersWithPrivateData)
+	fmt.Printf("Average gearscore: %d\n", average)
 }
